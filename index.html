@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BDP-1 Emulator</title>
+<style>
+  :root {
+    --bg:        #d4d4d4;
+    --panel:     #ececec;
+    --panel-dk:  #c0c0c0;
+    --ink:       #111;
+    --header-bg: #1f3a6b;
+    --header-fg: #fff;
+    --led-off:   #2a0808;
+    --led-off-bd:#3a1010;
+    --led-on:    #ff3030;
+    --led-on-bd: #ff7070;
+    --led-on-glow:#ff2020;
+    --screen-bg: #0a0a0a;
+    --term-bg:   #000;
+    --term-fg:   #ffcc00;
+    --tool-bg:   #f0f0f0;
+    --btn-bg:    #f8f8f8;
+    --btn-bd:    #888;
+    --sel-bg:    #222;
+    --sel-fg:    #ffd84d;
+    --mem-cur:   #ffe680;
+    --mem-cur-bd:#c89000;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Cascadia Mono', 'Menlo', 'Courier New', monospace;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  body {
+    padding: 12px;
+    box-sizing: border-box;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: max-content max-content 1fr;
+    gap: 12px;
+    height: 100%;
+  }
+  .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+
+  /* A panel marked .fill stretches to fill the column, with its content
+     (the div after .panel-title) growing to fill the panel. */
+  .fill {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .fill > div:not(.panel-title) {
+    flex: 1;
+    min-height: 0;
+  }
+  .fill > .panel-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .fill > .panel-body > textarea {
+    flex: 1;
+    min-height: 0;
+    resize: none;
+  }
+
+  /* ---------- Header (msu blue banner) ---------- */
+  .header, .toolbar { flex: 0 0 auto; }
+  .header {
+    background: var(--header-bg);
+    color: var(--header-fg);
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+  .logo-msu {
+    display: flex;
+    gap: 2px;
+    padding: 6px;
+    background: var(--header-bg);
+  }
+  .logo-msu span {
+    width: 28px; height: 28px;
+    background: #fff;
+    color: var(--header-bg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    font-style: italic;
+  }
+  .header-title {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 6px 16px;
+    font-size: 26px;
+    font-style: italic;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .header-sub {
+    font-size: 15px;
+    font-style: italic;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar {
+    background: var(--tool-bg);
+    padding: 8px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    border-bottom: 1px solid var(--btn-bd);
+  }
+  .toolbar select, .toolbar button {
+    font-family: inherit;
+    font-size: 13px;
+    border: 1px solid var(--btn-bd);
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  .toolbar select {
+    background: var(--sel-bg);
+    color: var(--sel-fg);
+    padding: 3px 6px;
+  }
+  .toolbar button {
+    background: var(--btn-bg);
+    color: var(--ink);
+    min-width: 56px;
+  }
+  .toolbar button:hover:not(:disabled) { background: #fff; }
+  .toolbar button:active:not(:disabled) { background: #ddd; }
+  .toolbar button:disabled { color: #aaa; cursor: default; }
+  .toolbar .status {
+    margin-left: auto;
+    font-size: 12px;
+    padding: 2px 8px;
+    color: #333;
+  }
+  .toolbar .status.halted { color: #b50; }
+  .toolbar .status.running { color: #0a0; }
+  .toolbar .status.error { color: #c00; }
+
+  /* ---------- Panels ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--btn-bd);
+  }
+  .panel-title {
+    background: var(--panel-dk);
+    padding: 4px 8px;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--btn-bd);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-body { padding: 8px; }
+
+  /* ---------- Register panel (black with red LEDs) ---------- */
+  .regpanel {
+    background: #000;
+    color: #ccc;
+    padding: 10px 12px;
+  }
+  .reg-row, .mem-row {
+    display: grid;
+    grid-template-columns: 2em auto 3em 2.5em 7em;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .mem-row { grid-template-columns: 2.8em auto 3em 2.5em 7em; }
+  .reg-row .v, .mem-row .v { text-align: right; }
+  .reg-row .asm, .mem-row .asm {
+    color: #888;
+    font-size: 12px;
+    text-align: left;
+  }
+  .reg-row.pc, .mem-row.pc {
+    background: rgba(255, 216, 77, 0.18);
+    box-shadow: inset 0 0 0 1px #ffd84d;
+  }
+  .reg-row.pc .name, .mem-row.pc .addr { color: #ffd84d; }
+  .reg-row.pc .v, .mem-row.pc .v { color: #ffe680; }
+  .reg-row.pc .asm, .mem-row.pc .asm { color: #ffd84d; }
+  /* peek: highlight a memory cell that something is pointing at (mouse hover) */
+  .mem-row.peek {
+    background: rgba(120, 200, 255, 0.18);
+    box-shadow: inset 0 0 0 1px #78c8ff;
+  }
+  .mem-row.peek.pc { box-shadow: inset 0 0 0 1px #ffd84d, inset 0 0 0 2px #78c8ff; }
+  .mem-row.peek .addr { color: #78c8ff; }
+  /* hex span is clickable/hover-able */
+  .v.hex { cursor: pointer; }
+  .v.hex:hover { color: #78c8ff; }
+  /* IR row: hide hex/dec, let ASM take the remaining columns */
+  .asm-only .v { display: none; }
+  .asm-only .asm { grid-column: 3 / -1; color: #ddd; }
+  .reg-row .name, .mem-row .addr {
+    color: #ddd;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .mem-row .addr { color: #888; }
+  .mem-row .addr:hover { color: #ffd84d; text-decoration: underline; }
+  .reg-row .v, .mem-row .v {
+    color: #ddd;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .leds { display: inline-flex; gap: 4px; align-items: center; }
+  .leds .gap { display: inline-block; width: 6px; }
+
+  /* Bit cells — square, slightly rounded, no glow */
+  .led {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    background: #2a1010;
+    border: 1px solid #4a1818;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background 60ms, border-color 60ms;
+  }
+  .led:hover { border-color: #7a2828; }
+  .led.on {
+    background: #d83030;
+    border-color: #f05050;
+  }
+  /* ---------- Memory scroll ---------- */
+  #memory {
+    overflow-y: auto;
+    background: #000;
+    padding: 10px 12px;
+  }
+  /* Divider above IP/IR/DR */
+  .reg-row.sep { border-top: 1px solid #333; margin-top: 4px; padding-top: 4px; }
+  /* Read-only LEDs (IP/IR/DR) — visually subdued cursor */
+  .led.ro { cursor: default; }
+  .led.ro:hover { border-color: #4a1818; }
+  #memory::-webkit-scrollbar { width: 12px; }
+  #memory::-webkit-scrollbar-track { background: #111; }
+  #memory::-webkit-scrollbar-thumb { background: #444; }
+  #memory::-webkit-scrollbar-thumb:hover { background: #666; }
+
+  /* ---------- Screen ---------- */
+  .screen-wrap {
+    background: var(--screen-bg);
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+  }
+  canvas#screen {
+    image-rendering: pixelated;
+    display: block;
+    background: #000;
+  }
+
+  /* ---------- Terminal-style output ---------- */
+  .terminal {
+    background: var(--term-bg);
+    color: var(--term-fg);
+    padding: 10px;
+    height: 10em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+  }
+
+  /* ---------- Program editor ---------- */
+  textarea#program {
+    width: 100%;
+    box-sizing: border-box;
+    background: #fff;
+    color: #111;
+    border: 1px solid var(--btn-bd);
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .ed-controls { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .ed-controls button, .ed-controls select {
+    font-family: inherit;
+    font-size: 13px;
+    border: 1px solid var(--btn-bd);
+    background: var(--btn-bg);
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  .ed-controls select { background: var(--sel-bg); color: var(--sel-fg); padding: 3px 6px; }
+  .err {
+    color: #c00;
+    font-size: 12px;
+    margin-top: 4px;
+    white-space: pre-wrap;
+  }
+
+  /* ---------- Tabs in PROGRAM panel ---------- */
+  .panel-title .tabs { display: inline-flex; gap: 2px; margin-left: 8px; }
+  .panel-title .tab {
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-bd);
+    padding: 2px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    color: #555;
+  }
+  .panel-title .tab.active {
+    background: var(--header-bg);
+    color: var(--header-fg);
+    border-color: var(--header-bg);
+  }
+  .panel-title .tab:hover:not(.active) { background: #fff; }
+  .tab-body[hidden] { display: none; }
+
+  /* ---------- Punch card view ---------- */
+  .card-body {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 8px;
+    overflow: auto;
+    min-height: 0;
+  }
+  .punch-card {
+    background: #efdfa8;
+    color: #2b1a05;
+    border: 1px solid #8a6610;
+    padding: 10px 14px 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.22), inset 0 0 0 1px #e2c977;
+    font-family: 'Cascadia Mono', 'Menlo', 'Courier New', monospace;
+    font-size: 12px;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+    /* faint horizontal ruled lines like a real card form */
+    background-image:
+      linear-gradient(rgba(122, 88, 30, 0.06) 1px, transparent 1px);
+    background-size: 100% 24px;
+    background-position: 0 56px;
+  }
+  /* Notched top-right corner — covers the corner with page color and
+     paints the diagonal border via the rotated square's bottom edge. */
+  .punch-card::after {
+    content: '';
+    position: absolute;
+    top: -22px;
+    right: -22px;
+    width: 44px;
+    height: 44px;
+    background: var(--bg);
+    transform: rotate(45deg);
+    border-bottom: 1px solid #8a6610;
+    pointer-events: none;
+  }
+  .card-brand {
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: #7a5818;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed #b69b5d;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    /* leave room so the notched corner doesn't overlap the brand text */
+    padding-right: 36px;
+  }
+  .card-footer {
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: #7a5818;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #b69b5d;
+    text-transform: uppercase;
+  }
+  .card-header,
+  .punch-row {
+    display: grid;
+    /* fixed widths so toggling cells never reflows the row */
+    grid-template-columns: 3em 11.5em 10em;
+    gap: 12px;
+    align-items: end;
+    padding: 0 4px 6px;
+  }
+  .card-header {
+    border-bottom: 1px dashed #b69b5d;
+    margin-bottom: 4px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #6b5320;
+    text-transform: uppercase;
+  }
+  .card-bits-h {
+    display: inline-flex;
+    gap: 3px;
+    align-items: end;
+  }
+  .card-bits-h .bit-col {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    width: 12px;
+    line-height: 1;
+  }
+  .card-bits-h .bit-col small {
+    font-size: 7px;
+    color: #9a7530;
+    letter-spacing: 0;
+    margin-top: 1px;
+  }
+  .card-bits-h .bits-gap { width: 5px; display: inline-block; }
+  .card-note-h { font-style: italic; }
+  .punch-row {
+    align-items: center;
+    padding: 1px 4px;
+  }
+  .punch-row .paddr {
+    color: #6b5320;
+    font-size: 11px;
+  }
+  .punch-holes { display: inline-flex; gap: 3px; align-items: center; }
+  .punch-holes .gap { display: inline-block; width: 5px; }
+  .hole {
+    width: 12px; height: 18px;
+    border: 1px solid #b69257;
+    border-radius: 5px;
+    background: #faf0d2;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background 60ms;
+    position: relative;
+  }
+  .hole:hover { border-color: #5a3812; }
+  .hole.on {
+    background: #2a1500;
+    border-color: #1a0d00;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.55);
+  }
+  /* subtle "punched" highlight along the top edge */
+  .hole.on::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 1px; right: 1px;
+    height: 2px;
+    background: rgba(255, 220, 150, 0.18);
+    border-radius: 5px 5px 0 0;
+    pointer-events: none;
+  }
+  .punch-note {
+    font-family: 'Marker Felt', 'Bradley Hand', 'Comic Sans MS', cursive;
+    font-size: 14px;
+    color: #2a5cb8;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* operand bytes get a different "data" treatment */
+  .punch-note.operand {
+    color: #7a5818;
+    font-style: italic;
+    cursor: help;
+  }
+  /* row hover-highlighted because something points at it */
+  .punch-row.peek {
+    background: rgba(220, 170, 50, 0.32);
+    box-shadow: inset 0 0 0 1px #8a6610;
+  }
+  .card-controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #b69b5d;
+  }
+  .card-controls button {
+    background: #fff8e0;
+    color: #2b1a05;
+    border: 1px solid #8a6610;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+  }
+  .card-controls button:hover { background: #fff; }
+  .card-controls button:active { background: #e8d59a; }
+
+  /* Cheat-sheet (stapled reference card) */
+  .cheat-sheet {
+    background: #efdfa8;
+    color: #2b1a05;
+    border: 1px solid #8a6610;
+    padding: 8px 10px;
+    font-family: 'Cascadia Mono', 'Menlo', 'Courier New', monospace;
+    font-size: 10px;
+    width: 11.5em;
+    min-width: 11.5em;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.22), inset 0 0 0 1px #e2c977;
+  }
+  .cheat-brand, .cheat-footer {
+    text-align: center;
+    font-size: 8px;
+    letter-spacing: 0.18em;
+    color: #7a5818;
+    text-transform: uppercase;
+    padding: 2px 0;
+    line-height: 1.4;
+  }
+  .cheat-brand { border-bottom: 1px dashed #b69b5d; margin-bottom: 6px; }
+  .cheat-footer { border-top: 1px dashed #b69b5d; margin-top: 6px; }
+  .cheat-sheet h4 {
+    margin: 5px 0 1px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: #6b5320;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .cheat-sheet h4:first-of-type { margin-top: 0; }
+  .cheat-sheet table { border-collapse: collapse; width: 100%; }
+  .cheat-sheet td { padding: 0 4px 0 0; vertical-align: top; white-space: nowrap; }
+  .cheat-sheet td.bits { color: #8a6610; font-size: 9px; }
+  /* the vertical R-encoding key at the bottom */
+  .cheat-regkey { display: inline-grid; grid-template-columns: auto auto; gap: 0 6px; font-size: 9px; }
+  .cheat-regkey .lab { color: #8a6610; }
+
+  /* ---------- HLL (ByteTran) tab ---------- */
+  .hll-body {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 8px;
+    min-height: 0;
+  }
+  .hll-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+  }
+  .hll-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .hll-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #888;
+    padding: 2px 0;
+  }
+  #hll-src {
+    flex: 1;
+    min-height: 0;
+    background: #fff;
+    color: #111;
+    border: 1px solid var(--btn-bd);
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+  }
+  .hll-out {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    margin: 0;
+    background: #111;
+    color: #9c9;
+    border: 1px solid var(--btn-bd);
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    white-space: pre;
+  }
+  .hll-out.err { color: #f88; }
+  .hll-help {
+    background: #fafafa;
+    border: 1px solid var(--btn-bd);
+    padding: 8px 10px;
+    font-size: 11px;
+    min-width: 16em;
+    max-width: 22em;
+    overflow: auto;
+  }
+  .hll-help h4 {
+    margin: 6px 0 2px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+  }
+  .hll-help code {
+    background: #eee;
+    padding: 0 3px;
+    border-radius: 2px;
+  }
+  .hll-help pre {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 4px 6px;
+    margin: 4px 0;
+    font-size: 11px;
+    white-space: pre-wrap;
+  }
+
+  ::selection { background: #ffd84d; color: #000; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- COLUMN 1: header + toolbar + registers + screen -->
+  <div class="col">
+    <div class="header">
+      <div class="logo-msu"><span>m</span><span>s</span><span>u</span></div>
+      <div class="header-title">BDP-1<span class="header-sub">Byte Data Processor</span></div>
+    </div>
+    <div class="toolbar">
+      <select id="speed">
+        <option value="1">1 Hz</option>
+        <option value="10">10 Hz</option>
+        <option value="60" selected>60 Hz</option>
+        <option value="200">200 Hz</option>
+        <option value="1000">1 KHz</option>
+      </select>
+      <button id="btn-run">run</button>
+      <button id="btn-step">step</button>
+      <button id="btn-stop" disabled>stop</button>
+      <button id="btn-reset">reset</button>
+      <span class="status" id="status">READY</span>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">REGISTERS</div>
+      <div class="regpanel" id="registers"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">SCREEN <span style="font-weight:normal;color:#666">16x16 / RGB332</span></div>
+      <div class="screen-wrap">
+        <canvas id="screen" width="16" height="16" style="width:320px;height:320px"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUMN 2: memory -->
+  <div class="col">
+    <div class="panel fill">
+      <div class="panel-title">MEMORY</div>
+      <div id="memory"></div>
+    </div>
+  </div>
+
+  <!-- COLUMN 3: program then output -->
+  <div class="col">
+    <div class="panel fill">
+      <div class="panel-title">
+        PROGRAM
+        <span class="tabs">
+          <button class="tab active" data-tab="card">CARD</button>
+          <button class="tab" data-tab="asm">ASM</button>
+          <button class="tab" data-tab="hll">ByteTran</button>
+        </span>
+      </div>
+
+      <!-- ASM mode -->
+      <div class="panel-body tab-body" data-tab="asm" hidden>
+        <textarea id="program" spellcheck="false"></textarea>
+        <div class="ed-controls">
+          <button id="btn-assemble">ASSEMBLE &amp; LOAD</button>
+          <select id="examples">
+            <option value="">-- examples --</option>
+            <option value="rand-pixels">RANDOM PIXELS</option>
+            <option value="count">COUNT TO 10</option>
+            <option value="sweep">COLOR SWEEP</option>
+            <option value="subroutine">JSR DEMO</option>
+            <option value="indirect">INDIRECT ARRAY SUM</option>
+            <option value="moire">XOR MOIRE</option>
+          </select>
+        </div>
+        <div class="err" id="asm-err"></div>
+      </div>
+
+      <!-- CARD mode: punch card + cheat sheet -->
+      <div class="tab-body card-body" data-tab="card">
+        <div class="punch-card">
+          <div class="card-brand">M S U &nbsp;&middot;&nbsp; BDP-1 PROGRAM CARD &nbsp;&middot;&nbsp; FORM 8-BIT</div>
+          <div class="card-header">
+            <span class="card-addr-h">ADDR</span>
+            <span class="card-bits-h">
+              <span class="bit-col">7<small>128</small></span>
+              <span class="bit-col">6<small>64</small></span>
+              <span class="bit-col">5<small>32</small></span>
+              <span class="bit-col">4<small>16</small></span>
+              <span class="bits-gap"></span>
+              <span class="bit-col">3<small>8</small></span>
+              <span class="bit-col">2<small>4</small></span>
+              <span class="bit-col">1<small>2</small></span>
+              <span class="bit-col">0<small>1</small></span>
+            </span>
+            <span class="card-note-h">decoded</span>
+          </div>
+          <div id="punch-rows"></div>
+          <div class="card-controls">
+            <button id="btn-load-card">LOAD CARD</button>
+            <button id="btn-clear-card">NEW CARD</button>
+          </div>
+          <div class="card-footer">DO NOT FOLD, SPINDLE, OR MUTILATE</div>
+        </div>
+        <div class="cheat-sheet" id="cheat-sheet"></div>
+      </div>
+
+      <!-- ByteTran mode -->
+      <div class="tab-body hll-body" data-tab="hll" hidden>
+        <div class="hll-edit">
+          <div class="hll-pane">
+            <div class="hll-label">SOURCE</div>
+            <textarea id="hll-src" spellcheck="false"></textarea>
+          </div>
+          <div class="hll-pane">
+            <div class="hll-label">COMPILED ASSEMBLY (read-only)</div>
+            <pre id="hll-asm" class="hll-out"></pre>
+          </div>
+          <div class="ed-controls">
+            <button id="btn-compile">COMPILE &amp; LOAD</button>
+            <select id="hll-examples">
+              <option value="">-- examples --</option>
+              <option value="bt-count">COUNT 0..N</option>
+              <option value="bt-fib">FIBONACCI</option>
+              <option value="bt-echo">ECHO</option>
+            </select>
+          </div>
+        </div>
+        <div class="hll-help" id="hll-help"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">OUTPUT</div>
+      <div class="terminal" id="output"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// BDP-1 STATE
+// ============================================================
+const MEM_SIZE = 256;
+const REG_NAMES = ['A', 'B', 'C', 'D'];
+
+const state = {
+  mem: new Uint8Array(MEM_SIZE),
+  reg: new Uint8Array(4),
+  pc: 0,
+  halted: false,
+  screen: new Uint8Array(256),
+  output: '',
+  error: null,
+};
+
+function readByte(a) { return state.mem[a & 0xFF]; }
+function writeByte(a, v) { state.mem[a & 0xFF] = v & 0xFF; }
+
+// ============================================================
+// INTERPRETER
+// ============================================================
+function step() {
+  if (state.halted) return;
+  const instr = readByte(state.pc);
+  const top = (instr >> 4) & 0xF;
+  const bot = instr & 0xF;
+  let nextPC = (state.pc + 1) & 0xFF;
+  let didJump = false;
+
+  switch (top) {
+    case 0x0: { // SYS (single)
+      if (bot === 0x0) state.halted = true;
+      else if (bot === 0x1) state.output += state.reg[0] + ' ';
+      else if (bot === 0x2) {
+        const s = window.prompt('RINT - enter unsigned integer (0..255):', '0');
+        const n = parseInt(s, 10);
+        state.reg[0] = (isNaN(n) ? 0 : n) & 0xFF;
+      }
+      else if ((bot & 0xC) === 0x8) state.reg[bot & 0x3] = (Math.random() * 256) | 0;
+      else if (bot === 0xF) { /* NOOP */ }
+      else state.error = 'bad SYS op ' + bot.toString(2);
+      break;
+    }
+    case 0x1: { // GFX (single)
+      if (bot === 0x0) state.screen.fill(0);
+      else if (bot === 0x1) {
+        const x = state.reg[1] & 0xF, y = state.reg[2] & 0xF;
+        state.screen[y * 16 + x] = state.reg[3];
+      }
+      else state.error = 'bad GFX op';
+      break;
+    }
+    case 0x2: { // MOV reg, reg (single) SSDD
+      const ss = (bot >> 2) & 0x3, dd = bot & 0x3;
+      state.reg[dd] = state.reg[ss];
+      break;
+    }
+    case 0x3: { // MOV reg, [reg] (single) PPDD — indirect load
+      const pp = (bot >> 2) & 0x3, dd = bot & 0x3;
+      state.reg[dd] = readByte(state.reg[pp]);
+      break;
+    }
+    case 0x4: { // MOV [reg], reg (single) PPSS — indirect store
+      const pp = (bot >> 2) & 0x3, ss = bot & 0x3;
+      writeByte(state.reg[pp], state.reg[ss]);
+      break;
+    }
+    case 0x5: { // RMATH (single) — accumulator: bot = OORR, A is dest
+      const op = (bot >> 2) & 0x3;
+      const v = state.reg[bot & 0x3];
+      if (op === 0x0) state.reg[0] = (state.reg[0] + v) & 0xFF;
+      else if (op === 0x1) state.reg[0] = (state.reg[0] - v) & 0xFF;
+      else if (op === 0x2) state.reg[0] = (state.reg[0] * v) & 0xFF;
+      else                 state.reg[0] = v === 0 ? 0 : ((state.reg[0] / v) | 0) & 0xFF;
+      break;
+    }
+    case 0x6: { // Unary register ops (single) — bot = OORR
+      //   OO = 00 INC, 01 DEC, 10 NEG, 11 ZERO
+      const op = (bot >> 2) & 0x3;
+      const rr = bot & 0x3;
+      if (op === 0x0) state.reg[rr] = (state.reg[rr] + 1) & 0xFF;
+      else if (op === 0x1) state.reg[rr] = (state.reg[rr] - 1) & 0xFF;
+      else if (op === 0x2) state.reg[rr] = (256 - state.reg[rr]) & 0xFF;
+      else                 state.reg[rr] = 0;
+      break;
+    }
+    case 0x7: { // RLOGIC (single) — accumulator: bot = OORR, A is dest
+      const op = (bot >> 2) & 0x3;
+      const v = state.reg[bot & 0x3];
+      if (op === 0x0)      state.reg[0] = state.reg[0] & v;
+      else if (op === 0x1) state.reg[0] = state.reg[0] | v;
+      else if (op === 0x2) state.reg[0] = state.reg[0] ^ v;
+      else                 state.reg[0] = v >= 8 ? 0 : ((state.reg[0] << v) & 0xFF);
+      break;
+    }
+    case 0x8: { // MEM (double)
+      const arg = readByte(nextPC);
+      nextPC = (nextPC + 1) & 0xFF;
+      const rr = bot & 0x3, op = (bot >> 2) & 0x3;
+      if (op === 0x0) state.reg[rr] = readByte(arg);
+      else if (op === 0x1) state.reg[rr] = arg;
+      else if (op === 0x2) writeByte(arg, state.reg[rr]);
+      else state.error = 'bad MEM op';
+      break;
+    }
+    case 0x9: { // MATH (double)
+      const arg = readByte(nextPC);
+      nextPC = (nextPC + 1) & 0xFF;
+      const rr = bot & 0x3, op = (bot >> 2) & 0x3, v = readByte(arg);
+      if (op === 0x0)      state.reg[rr] = (state.reg[rr] + v) & 0xFF;
+      else if (op === 0x1) state.reg[rr] = (state.reg[rr] - v) & 0xFF;
+      else if (op === 0x2) state.reg[rr] = (state.reg[rr] * v) & 0xFF;
+      else                 state.reg[rr] = v === 0 ? 0 : ((state.reg[rr] / v) | 0) & 0xFF;
+      break;
+    }
+    case 0xA: { // JUMP (double)
+      const arg = readByte(nextPC);
+      nextPC = (nextPC + 1) & 0xFF;
+      const a = state.reg[0];
+      const isZero = a === 0, isNeg = (a & 0x80) !== 0, isPos = !isZero && !isNeg;
+      if (bot === 0x0) { state.pc = arg; didJump = true; }
+      else if (bot === 0x1 && isZero) { state.pc = arg; didJump = true; }
+      else if (bot === 0x2 && isPos)  { state.pc = arg; didJump = true; }
+      else if (bot === 0x3 && isNeg)  { state.pc = arg; didJump = true; }
+      else if (bot === 0x4) { writeByte(arg, nextPC); state.pc = (arg + 1) & 0xFF; didJump = true; }
+      else if (bot === 0x5) { state.pc = readByte(arg); didJump = true; }
+      break;
+    }
+    case 0xB: { // LOGIC (double)
+      const arg = readByte(nextPC);
+      nextPC = (nextPC + 1) & 0xFF;
+      const rr = bot & 0x3, op = (bot >> 2) & 0x3, v = readByte(arg);
+      if (op === 0x0)      state.reg[rr] = state.reg[rr] & v;
+      else if (op === 0x1) state.reg[rr] = state.reg[rr] | v;
+      else if (op === 0x2) state.reg[rr] = state.reg[rr] ^ v;
+      else                 state.reg[rr] = v >= 8 ? 0 : ((state.reg[rr] << v) & 0xFF);
+      break;
+    }
+    default:
+      state.error = 'unknown top nibble ' + top.toString(2).padStart(4, '0');
+  }
+
+  if (!didJump) state.pc = nextPC;
+  if (state.error) state.halted = true;
+}
+
+// ============================================================
+// DISASSEMBLER (single byte, with optional operand from next byte)
+// ============================================================
+const _RR = ['A', 'B', 'C', 'D'];
+function disasmByte(b, next) {
+  const top = (b >> 4) & 0xF;
+  const bot = b & 0xF;
+  const hex2 = n => n.toString(16).toUpperCase().padStart(2, '0');
+  const arg = () => hex2(next & 0xFF);
+  switch (top) {
+    case 0x0: // SYS
+      if (bot === 0x0) return 'HALT';
+      if (bot === 0x1) return 'WINT';
+      if (bot === 0x2) return 'RINT';
+      if ((bot & 0xC) === 0x8) return 'RAND ' + _RR[bot & 3];
+      if (bot === 0xF) return 'NOOP';
+      return '';
+    case 0x1: // GFX
+      if (bot === 0) return 'CLEAR';
+      if (bot === 1) return 'PLOT';
+      return '';
+    case 0x2: // MOV reg, reg   SSDD
+      return 'MOV ' + _RR[bot & 3] + ',' + _RR[(bot >> 2) & 3];
+    case 0x3: // MOV reg, [reg]   PPDD
+      return 'MOV ' + _RR[bot & 3] + ',[' + _RR[(bot >> 2) & 3] + ']';
+    case 0x4: // MOV [reg], reg   PPSS
+      return 'MOV [' + _RR[(bot >> 2) & 3] + '],' + _RR[bot & 3];
+    case 0x5: // RMATH accumulator: OORR
+      return ['ADD','SUB','MUL','DIV'][(bot >> 2) & 3] + ' A,' + _RR[bot & 3];
+    case 0x6: { // Unary register ops
+      const r = _RR[bot & 3];
+      return ['INC', 'DEC', 'NEG', 'ZERO'][(bot >> 2) & 3] + ' ' + r;
+    }
+    case 0x7: // RLOGIC accumulator: OORR
+      return ['AND','OR','XOR','SHL'][(bot >> 2) & 3] + ' A,' + _RR[bot & 3];
+    case 0x8: { // MEM
+      const r = _RR[bot & 3], op = (bot >> 2) & 3;
+      if (op === 0) return 'MOV ' + r + ',[' + arg() + ']';
+      if (op === 1) return 'MOV ' + r + ',' + arg();
+      if (op === 2) return 'MOV [' + arg() + '],' + r;
+      return '';
+    }
+    case 0x9: { // MATH
+      const r = _RR[bot & 3];
+      return ['ADD','SUB','MUL','DIV'][(bot >> 2) & 3] + ' ' + r + ',[' + arg() + ']';
+    }
+    case 0xA: { // JUMP
+      const m = ['JMP','JZ','JP','JN','JSR','JI'][bot];
+      return m ? m + ' ' + arg() : '';
+    }
+    case 0xB: { // LOGIC
+      const r = _RR[bot & 3];
+      return ['AND','OR','XOR','SHL'][(bot >> 2) & 3] + ' ' + r + ',[' + arg() + ']';
+    }
+  }
+  return '';
+}
+
+// ============================================================
+// BIT-CELL ROW BUILDER
+// ============================================================
+function makeRow(rowClass, labelText, labelClass, getValue, setValue, getAsm) {
+  const row = document.createElement('div');
+  row.className = rowClass;
+
+  const label = document.createElement('span');
+  label.className = labelClass;
+  label.textContent = labelText;
+  row.appendChild(label);
+
+  const readonly = !setValue;
+  const leds = document.createElement('span');
+  leds.className = 'leds';
+  const lights = [];
+  for (let bit = 7; bit >= 0; bit--) {
+    const led = document.createElement('span');
+    led.className = readonly ? 'led ro' : 'led';
+    if (!readonly) {
+      led.tabIndex = 0;
+      led.role = 'checkbox';
+      led.addEventListener('click', () => {
+        let v = getValue();
+        v ^= (1 << bit);
+        setValue(v & 0xFF);
+        refresh();
+      });
+      led.addEventListener('keydown', e => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          led.click();
+        }
+      });
+    }
+    leds.appendChild(led);
+    lights.push({el: led, bit});
+    if (bit === 4) {
+      const g = document.createElement('span');
+      g.className = 'gap';
+      leds.appendChild(g);
+    }
+  }
+  row.appendChild(leds);
+
+  const hSpan = document.createElement('span'); hSpan.className = 'v hex'; row.appendChild(hSpan);
+  const dSpan = document.createElement('span'); dSpan.className = 'v'; row.appendChild(dSpan);
+  const aSpan = document.createElement('span'); aSpan.className = 'asm'; row.appendChild(aSpan);
+
+  // Hover/click on the hex value peeks/jumps to the memory cell at that address.
+  hSpan.addEventListener('mouseenter', () => peekMemory(getValue() & 0xFF));
+  hSpan.addEventListener('mouseleave', () => peekMemory(null));
+  hSpan.addEventListener('click', () => {
+    const addr = getValue() & 0xFF;
+    if (memRows[addr]) memRows[addr].row.scrollIntoView({block: 'nearest'});
+  });
+
+  function update() {
+    const v = getValue() & 0xFF;
+    for (const {el, bit} of lights) {
+      el.classList.toggle('on', !!(v & (1 << bit)));
+    }
+    hSpan.textContent = '0x' + v.toString(16).toUpperCase().padStart(2, '0');
+    dSpan.textContent = String(v);
+    aSpan.textContent = getAsm ? getAsm() : '';
+  }
+
+  return {
+    row, update,
+    setPC(p) { row.classList.toggle('pc', p); },
+    // For IR: hide hex/dec, expand ASM column to the right.
+    asmOnly() { row.classList.add('asm-only'); },
+  };
+}
+
+// ============================================================
+// BUILD UI
+// ============================================================
+const regsRoot = document.getElementById('registers');
+const memRoot = document.getElementById('memory');
+
+const regRows = REG_NAMES.map((name, i) => {
+  const r = makeRow('reg-row', name, 'name',
+    () => state.reg[i],
+    v => state.reg[i] = v);
+  regsRoot.appendChild(r.row);
+  return r;
+});
+
+// Special registers IP (instruction pointer), IR (instruction reg), DR (data reg).
+// All three are writable: toggling IR/DR bits pokes M[PC] / M[PC+1], so students
+// can hand-edit the instruction the CPU is about to execute.
+const ipRow = makeRow('reg-row sep', 'IP', 'name',
+  () => state.pc,
+  v => { state.pc = v & 0xFF; });
+const irRow = makeRow('reg-row', 'IR', 'name',
+  () => state.mem[state.pc & 0xFF],
+  v => { state.mem[state.pc & 0xFF] = v & 0xFF; },
+  () => disasmByte(state.mem[state.pc & 0xFF],
+                   state.mem[(state.pc + 1) & 0xFF]));
+const drRow = makeRow('reg-row', 'DR', 'name',
+  () => state.mem[(state.pc + 1) & 0xFF],
+  v => { state.mem[(state.pc + 1) & 0xFF] = v & 0xFF; });
+regsRoot.appendChild(ipRow.row);
+regsRoot.appendChild(irRow.row);
+regsRoot.appendChild(drRow.row);
+irRow.asmOnly();   // IR shows the decoded mnemonic only, no hex/dec
+const specialRows = [ipRow, irRow, drRow];
+
+// Peek highlight: when hovering a hex value, highlight the memory cell it points to.
+let peekedAddr = null;
+function peekMemory(addr) {
+  if (peekedAddr !== null && memRows[peekedAddr]) {
+    memRows[peekedAddr].row.classList.remove('peek');
+  }
+  peekedAddr = addr;
+  if (peekedAddr !== null && memRows[peekedAddr]) {
+    memRows[peekedAddr].row.classList.add('peek');
+  }
+}
+
+const memRows = [];
+for (let a = 0; a < MEM_SIZE; a++) {
+  const r = makeRow('mem-row',
+    '0x' + a.toString(16).toUpperCase().padStart(2, '0'),
+    'addr',
+    () => state.mem[a],
+    v => state.mem[a] = v,
+    () => disasmByte(state.mem[a], state.mem[(a + 1) & 0xFF]));
+  // Clicking the address label sets PC to this row — IR/DR follow automatically.
+  const addrSpan = r.row.querySelector('.addr');
+  addrSpan.style.cursor = 'pointer';
+  addrSpan.title = 'Set PC to 0x' + a.toString(16).toUpperCase().padStart(2, '0');
+  addrSpan.addEventListener('click', () => {
+    state.pc = a;
+    state.halted = false;
+    state.error = null;
+    refresh();
+  });
+  memRoot.appendChild(r.row);
+  memRows.push(r);
+}
+
+// ============================================================
+// SCREEN
+// ============================================================
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+const img = ctx.createImageData(16, 16);
+
+function color8ToRGB(c) {
+  const r = ((c >> 5) & 0x7) * 36;
+  const g = ((c >> 2) & 0x7) * 36;
+  const b = (c & 0x3) * 85;
+  return [r, g, b];
+}
+function drawScreen() {
+  for (let i = 0; i < 256; i++) {
+    const [r, g, b] = color8ToRGB(state.screen[i]);
+    img.data[i * 4] = r;
+    img.data[i * 4 + 1] = g;
+    img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// BDP-1 splash bitmap: "BDP" on top, "1" centered below, lit in amber on black.
+const SPLASH = [
+  '0000000000000000',
+  '0000000000000000',
+  '0111001110011100',
+  '0100101001010010',
+  '0111001001011100',
+  '0100101001010000',
+  '0111001110010000',
+  '0000000000000000',
+  '0000000000000000',
+  '0000000010000000',
+  '0000000110000000',
+  '0000000010000000',
+  '0000000010000000',
+  '0000000111000000',
+  '0000000000000000',
+  '0000000000000000',
+];
+function showSplash() {
+  for (let y = 0; y < 16; y++) {
+    const row = SPLASH[y];
+    for (let x = 0; x < 16; x++) {
+      state.screen[y * 16 + x] = row[x] === '1' ? 0xF0 : 0x00;
+    }
+  }
+}
+
+// ============================================================
+// REFRESH
+// ============================================================
+const statusLabel = document.getElementById('status');
+const outputEl = document.getElementById('output');
+
+let lastPCShown = -1;
+function refresh() {
+  for (const r of regRows) r.update();
+  for (const r of specialRows) r.update();
+  for (let a = 0; a < MEM_SIZE; a++) {
+    memRows[a].update();
+    memRows[a].setPC(a === state.pc);
+  }
+  outputEl.textContent = state.output;
+  drawScreen();
+
+  // Scroll PC row into view when it moves outside the visible window.
+  if (state.pc !== lastPCShown) {
+    lastPCShown = state.pc;
+    memRows[state.pc].row.scrollIntoView({block: 'nearest'});
+  }
+
+  statusLabel.className = 'status';
+  if (state.error) { statusLabel.textContent = 'ERR: ' + state.error; statusLabel.classList.add('error'); }
+  else if (state.halted) { statusLabel.textContent = 'HALTED'; statusLabel.classList.add('halted'); }
+  else if (running) { statusLabel.textContent = 'RUNNING'; statusLabel.classList.add('running'); }
+  else { statusLabel.textContent = 'READY'; }
+}
+
+// ============================================================
+// RUN LOOP
+// ============================================================
+let running = false;
+let runTimer = null;
+const speedSelect = document.getElementById('speed');
+
+function startRun() {
+  if (running || state.halted) return;
+  running = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('btn-run').disabled = true;
+  scheduleTick();
+  refresh();
+}
+function stopRun() {
+  running = false;
+  if (runTimer) { clearTimeout(runTimer); runTimer = null; }
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('btn-run').disabled = false;
+  refresh();
+}
+function scheduleTick() {
+  const hz = parseInt(speedSelect.value, 10) || 60;
+  const tickHz = Math.min(60, hz);
+  const batch = Math.max(1, Math.floor(hz / tickHz));
+  runTimer = setTimeout(() => {
+    if (!running) return;
+    for (let i = 0; i < batch && running && !state.halted; i++) step();
+    refresh();
+    if (state.halted) { stopRun(); return; }
+    scheduleTick();
+  }, 1000 / tickHz);
+}
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  if (state.halted) return;
+  step();
+  refresh();
+});
+document.getElementById('btn-run').addEventListener('click', startRun);
+document.getElementById('btn-stop').addEventListener('click', stopRun);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopRun();
+  state.mem.fill(0);
+  state.reg.fill(0);
+  state.pc = 0;
+  state.halted = false;
+  state.output = '';
+  state.error = null;
+  showSplash();
+  refresh();
+});
+
+// ============================================================
+// ASSEMBLER
+// ============================================================
+// Syntax (x366-flavored):
+//   MOV reg, reg              -> 0010 SSDD     (register copy)
+//   MOV reg, [reg]            -> 0011 PPDD     (indirect load)
+//   MOV [reg], reg            -> 0100 PPSS     (indirect store)
+//   MOV reg, imm              -> 1000 01RR im  (load immediate)
+//   MOV reg, [addr]           -> 1000 00RR ad  (load direct)
+//   MOV [addr], reg           -> 1000 10RR ad  (store direct)
+//   ADD/SUB/MUL/DIV reg,[mem] -> 1001 ##RR ad
+//   AND/OR/XOR/SHL  reg,[mem] -> 1011 ##RR ad
+//   JMP/JZ/JP/JN/JSR/JI addr  -> 1010 ##__ ad
+//   ZERO reg, RAND reg, MOV/ADD etc., HALT, WINT, RINT, NOOP, CLEAR, PLOT
+//   SW value [, value ...]    -> raw byte(s) at the current PC
+
+const REG_MAP = {A: 0, B: 1, C: 2, D: 3};
+
+function reg(s) {
+  if (s === undefined) throw new Error('missing register');
+  const r = REG_MAP[s.toUpperCase()];
+  if (r === undefined) throw new Error('not a register: ' + s);
+  return r;
+}
+
+function parseNum(s) {
+  if (s === undefined) return null;
+  if (/^0x[0-9a-f]+$/i.test(s)) return parseInt(s.slice(2), 16);
+  if (/^0b[01]+$/i.test(s)) return parseInt(s.slice(2), 2);
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  if (/^'.'$/.test(s)) return s.charCodeAt(1);
+  return null;
+}
+
+// Classify a MOV/ADD/etc. operand by syntax.
+// kind: 'reg' | 'memreg' (e.g. [B]) | 'mem' (e.g. [label]) | 'imm' (number or label as value)
+function classify(t) {
+  if (t === undefined) throw new Error('missing operand');
+  if (/^[ABCD]$/i.test(t)) return {kind: 'reg', value: REG_MAP[t.toUpperCase()]};
+  const m = t.match(/^\[(.+)\]$/);
+  if (m) {
+    const inner = m[1].trim();
+    if (/^[ABCD]$/i.test(inner)) return {kind: 'memreg', value: REG_MAP[inner.toUpperCase()]};
+    return {kind: 'mem', expr: inner};
+  }
+  return {kind: 'imm', expr: t};
+}
+
+function encMov(args, resolve) {
+  if (args.length !== 2) throw new Error('MOV needs 2 operands');
+  const dst = classify(args[0]), src = classify(args[1]);
+  if (dst.kind === 'reg' && src.kind === 'reg')
+    return [0x20 | (src.value << 2) | dst.value];
+  if (dst.kind === 'reg' && src.kind === 'memreg')
+    return [0x30 | (src.value << 2) | dst.value];
+  if (dst.kind === 'memreg' && src.kind === 'reg')
+    return [0x40 | (dst.value << 2) | src.value];
+  if (dst.kind === 'reg' && src.kind === 'mem')
+    return [0x80 | dst.value, resolve(src.expr)];
+  if (dst.kind === 'reg' && src.kind === 'imm')
+    return [0x84 | dst.value, resolve(src.expr)];
+  if (dst.kind === 'mem' && src.kind === 'reg')
+    return [0x88 | src.value, resolve(dst.expr)];
+  throw new Error('MOV: invalid operand combination');
+}
+function sizeMov(args) {
+  if (args.length !== 2) throw new Error('MOV needs 2 operands');
+  const dst = classify(args[0]), src = classify(args[1]);
+  if (dst.kind === 'reg' && src.kind === 'reg') return 1;
+  if (dst.kind === 'reg' && src.kind === 'memreg') return 1;
+  if (dst.kind === 'memreg' && src.kind === 'reg') return 1;
+  return 2;
+}
+
+// Dual-form math/logic op encoder.
+//   reg-reg (accumulator): dst must be A; emits  regBase | src   (1 byte)
+//   reg-[mem]:             any dst;       emits  memBase | dst, addr   (2 bytes)
+function encDual(regBase, memBase, name) {
+  return (args, resolve) => {
+    if (args.length !== 2) throw new Error(name + ' needs 2 operands');
+    const dst = classify(args[0]), src = classify(args[1]);
+    if (dst.kind !== 'reg') throw new Error(name + ': first operand must be a register');
+    if (src.kind === 'reg') {
+      if (dst.value !== 0) throw new Error(name + ' reg, reg: destination must be A (accumulator)');
+      return [regBase | src.value];
+    }
+    if (src.kind === 'mem') return [memBase | dst.value, resolve(src.expr)];
+    throw new Error(name + ': second operand must be a register or [memory address]');
+  };
+}
+function sizeDual(args) {
+  if (args.length !== 2) return 2;
+  return classify(args[1]).kind === 'reg' ? 1 : 2;
+}
+
+// Unary single-byte ops (INC/DEC/NEG/ZERO): take one register.
+function encUnary(base) {
+  return (args) => {
+    if (args.length !== 1) throw new Error('needs 1 register');
+    const r = classify(args[0]);
+    if (r.kind !== 'reg') throw new Error('operand must be a register');
+    return [base | r.value];
+  };
+}
+
+const ASM = {
+  // SYS (single)
+  'HALT':  {size: () => 1, enc: () => [0x00]},
+  'WINT':  {size: () => 1, enc: () => [0x01]},
+  'RINT':  {size: () => 1, enc: () => [0x02]},
+  'NOOP':  {size: () => 1, enc: () => [0x0F]},
+  'RAND':  {size: () => 1, enc: (a) => [0x08 | reg(a[0])]},
+  // GFX (single)
+  'CLEAR': {size: () => 1, enc: () => [0x10]},
+  'PLOT':  {size: () => 1, enc: () => [0x11]},
+  // MOV multi-form (1 or 2 bytes)
+  'MOV':   {size: sizeMov, enc: encMov},
+  // Unary register ops (single byte)
+  //   INC reg  -> 0110 00RR
+  //   DEC reg  -> 0110 01RR
+  //   NEG reg  -> 0110 10RR
+  //   ZERO reg -> 0110 11RR
+  'INC':   {size: () => 1, enc: encUnary(0x60)},
+  'DEC':   {size: () => 1, enc: encUnary(0x64)},
+  'NEG':   {size: () => 1, enc: encUnary(0x68)},
+  'ZERO':  {size: () => 1, enc: encUnary(0x6C)},
+  // ADD/SUB/MUL/DIV: reg-reg form requires dst=A (accumulator, RMATH at 0101).
+  //                  reg-[mem] form (MMATH at 1001) allows any dst.
+  'ADD':   {size: sizeDual, enc: encDual(0x50, 0x90, 'ADD')},
+  'SUB':   {size: sizeDual, enc: encDual(0x54, 0x94, 'SUB')},
+  'MUL':   {size: sizeDual, enc: encDual(0x58, 0x98, 'MUL')},
+  'DIV':   {size: sizeDual, enc: encDual(0x5C, 0x9C, 'DIV')},
+  // JUMP (double, addr)
+  'JMP':   {size: () => 2, enc: (a, r) => [0xA0, r(a[0])]},
+  'JZ':    {size: () => 2, enc: (a, r) => [0xA1, r(a[0])]},
+  'JP':    {size: () => 2, enc: (a, r) => [0xA2, r(a[0])]},
+  'JN':    {size: () => 2, enc: (a, r) => [0xA3, r(a[0])]},
+  'JSR':   {size: () => 2, enc: (a, r) => [0xA4, r(a[0])]},
+  'JI':    {size: () => 2, enc: (a, r) => [0xA5, r(a[0])]},
+  // AND/OR/XOR/SHL: same pattern. reg-reg dst=A (RLOGIC at 0111),
+  //                                reg-[mem] any dst (LOGIC at 1011).
+  'AND':   {size: sizeDual, enc: encDual(0x70, 0xB0, 'AND')},
+  'OR':    {size: sizeDual, enc: encDual(0x74, 0xB4, 'OR')},
+  'XOR':   {size: sizeDual, enc: encDual(0x78, 0xB8, 'XOR')},
+  'SHL':   {size: sizeDual, enc: encDual(0x7C, 0xBC, 'SHL')},
+};
+
+function tokenize(source) {
+  // Returns array of {label, op, args, lineNo, raw}
+  const lines = source.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    // Strip comments, then collapse whitespace inside [...] so brackets stay one token.
+    const line = raw.replace(/;.*/, '')
+                    .replace(/\[\s*([^\]]*?)\s*\]/g, '[$1]')
+                    .trim();
+    if (!line) continue;
+    const parts = line.split(/[\s,]+/).filter(Boolean);
+    let idx = 0;
+    let label = null;
+    if (parts[0].endsWith(':')) {
+      label = parts[0].slice(0, -1);
+      idx = 1;
+    }
+    const op = parts[idx];
+    const args = parts.slice(idx + 1);
+    out.push({label, op, args, lineNo: i + 1, raw});
+  }
+  return out;
+}
+
+function assemble(source) {
+  const stmts = tokenize(source);
+  const labels = {};
+  let pc = 0;
+
+  // Pass 1: addresses and labels
+  for (const s of stmts) {
+    if (s.label) {
+      if (labels[s.label] !== undefined) throw new Error(`line ${s.lineNo}: duplicate label "${s.label}"`);
+      labels[s.label] = pc;
+    }
+    if (!s.op) continue;
+    const op = s.op.toUpperCase();
+    if (op === 'SW') {
+      pc = (pc + s.args.length) & 0xFF;
+      continue;
+    }
+    const def = ASM[op];
+    if (!def) throw new Error(`line ${s.lineNo}: unknown mnemonic "${op}"`);
+    let sz;
+    try { sz = def.size(s.args); }
+    catch (e) { throw new Error(`line ${s.lineNo}: ${e.message}`); }
+    pc = (pc + sz) & 0xFF;
+  }
+
+  // Pass 2: emit
+  const out = new Uint8Array(MEM_SIZE);
+  pc = 0;
+  const resolve = (tok, lineNo) => {
+    const n = parseNum(tok);
+    if (n !== null) return n & 0xFF;
+    if (labels[tok] !== undefined) return labels[tok] & 0xFF;
+    throw new Error(`line ${lineNo}: unknown label "${tok}"`);
+  };
+
+  for (const s of stmts) {
+    if (!s.op) continue;
+    const op = s.op.toUpperCase();
+    if (op === 'SW') {
+      for (const a of s.args) out[pc++ & 0xFF] = resolve(a, s.lineNo);
+      pc &= 0xFF;
+      continue;
+    }
+    const def = ASM[op];
+    let bytes;
+    try {
+      bytes = def.enc(s.args, t => resolve(t, s.lineNo));
+    } catch (e) {
+      throw new Error(`line ${s.lineNo}: ${e.message}`);
+    }
+    for (const b of bytes) out[pc++ & 0xFF] = b & 0xFF;
+    pc &= 0xFF;
+  }
+  return out;
+}
+
+function loadBytes(bytes) {
+  stopRun();
+  state.mem.fill(0);
+  state.reg.fill(0);
+  state.pc = 0;
+  state.halted = false;
+  state.output = '';
+  state.error = null;
+  for (let i = 0; i < bytes.length && i < MEM_SIZE; i++) state.mem[i] = bytes[i];
+  showSplash();
+  refresh();
+}
+
+const errBox = document.getElementById('asm-err');
+function clearErr() { errBox.textContent = ''; }
+function showErr(msg) { errBox.textContent = msg; }
+
+document.getElementById('btn-assemble').addEventListener('click', () => {
+  clearErr();
+  try {
+    const out = assemble(document.getElementById('program').value);
+    loadBytes(out);
+  } catch (e) { showErr(e.message); }
+});
+
+// ============================================================
+// EXAMPLE PROGRAMS (assembly)
+// ============================================================
+const EXAMPLES = {
+  'rand-pixels':
+`; Random pixels forever.
+        CLEAR
+loop:   RAND B
+        RAND C
+        RAND D
+        PLOT
+        JMP  loop`,
+
+  'count':
+`; Count 0..9, print each via WINT, then HALT.
+; MOV uses Intel-style "dest, src" order, brackets denote memory access.
+        MOV A, 0
+        MOV [counter], A
+loop:   MOV A, [counter]
+        WINT
+        ADD A, [one]
+        MOV [counter], A
+        SUB A, [ten]
+        JZ  done
+        JMP loop
+done:   HALT
+counter: SW 0
+one:     SW 1
+ten:     SW 10`,
+
+  'sweep':
+`; Color sweep: paint every pixel with a unique color.
+; B=x, C=y, D=color
+        CLEAR
+        ZERO B
+        ZERO C
+        ZERO D
+loop:   PLOT
+        ADD D, [one]
+        ADD B, [one]
+        MOV A, B              ; A := B
+        SUB A, [sixteen]
+        JZ  nextrow
+        JMP loop
+nextrow:
+        ZERO B
+        ADD C, [one]
+        MOV A, C              ; A := C
+        SUB A, [sixteen]
+        JZ  done
+        JMP loop
+done:   HALT
+one:     SW 1
+sixteen: SW 16`,
+
+  'subroutine':
+`; Call a subroutine that doubles A, then print A.
+; Convention: JSR target = return slot; body lives at slot+1.
+        MOV A, 5
+        JSR double          ; M[double] := return addr; PC := double+1
+        WINT
+        HALT
+double: SW 0                ; return slot; body starts at double+1
+        MOV [scratch], A
+        ADD A, [scratch]
+        JI  double          ; return via M[double]
+scratch: SW 0`,
+
+  'indirect':
+`; Walk a 4-byte array; sum ends up in A, then negate.
+; RMATH ops (ADD/SUB/MUL/DIV reg,reg) always write to A (accumulator).
+; That means the loop counter has to live elsewhere and we swap into A to test.
+        MOV B, arr           ; B = pointer
+        MOV C, 4             ; C = remaining count
+        ZERO A               ; A = running sum
+loop:   MOV D, [B]           ; D := M[B]  (indirect load)
+        ADD A, D             ; A += D     (accumulator add)
+        INC B
+        MOV [savedA], A      ; stash the sum so we can use A to test C
+        MOV A, C
+        DEC A
+        MOV C, A
+        JZ done
+        MOV A, [savedA]      ; restore the sum
+        JMP loop
+done:   MOV A, [savedA]
+        NEG A                ; flip sign (48 -> 208 = -48)
+        HALT
+savedA:  SW 0
+arr:     SW 7, 11, 13, 17`,
+
+  'moire':
+`; 16x16 moire pattern: color[x][y] = x XOR y
+; B = x, C = y, A is scratch / XOR accumulator.
+        CLEAR
+        ZERO B
+xloop:  ZERO C
+yloop:  MOV A, B
+        XOR A, C             ; A := x XOR y (RLOGIC, accumulator)
+        MOV D, A
+        PLOT
+        INC C
+        MOV A, C
+        SUB A, [sixteen]
+        JZ xnext
+        JMP yloop
+xnext:  INC B
+        MOV A, B
+        SUB A, [sixteen]
+        JZ done
+        JMP xloop
+done:   HALT
+sixteen: SW 16`,
+};
+
+document.getElementById('examples').addEventListener('change', e => {
+  const v = e.target.value;
+  if (!v) return;
+  document.getElementById('program').value = EXAMPLES[v];
+  e.target.value = '';
+  clearErr();
+});
+
+// ============================================================
+// TAB SWITCHER
+// ============================================================
+document.querySelectorAll('.panel-title .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const which = btn.dataset.tab;
+    document.querySelectorAll('.panel-title .tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-body').forEach(body => {
+      body.hidden = body.dataset.tab !== which;
+    });
+  });
+});
+
+// ============================================================
+// PUNCH CARD VIEW
+// ============================================================
+// The card is an independent buffer of bytes you "punch". Nothing in
+// the machine reads from it until you press LOAD CARD, which copies the
+// buffer into memory starting at 0x00.
+const CARD_BYTES = 32;
+const cardBytes = new Uint8Array(CARD_BYTES);
+const punchRoot = document.getElementById('punch-rows');
+const punchRows = [];
+
+function makePunchRow(addr) {
+  const row = document.createElement('div');
+  row.className = 'punch-row';
+
+  const a = document.createElement('span');
+  a.className = 'paddr';
+  a.textContent = '0x' + addr.toString(16).toUpperCase().padStart(2, '0');
+  row.appendChild(a);
+
+  const holes = document.createElement('span');
+  holes.className = 'punch-holes';
+  const holeEls = [];
+  for (let bit = 7; bit >= 0; bit--) {
+    const h = document.createElement('span');
+    h.className = 'hole';
+    h.tabIndex = 0;
+    h.addEventListener('click', () => {
+      cardBytes[addr] ^= (1 << bit);
+      // Toggling can change whether the *next* byte is an operand;
+      // recompute the full annotation so neighboring rows update too.
+      updateCard();
+    });
+    holes.appendChild(h);
+    holeEls.push({el: h, bit});
+    if (bit === 4) {
+      const g = document.createElement('span');
+      g.className = 'gap';
+      holes.appendChild(g);
+    }
+  }
+  row.appendChild(holes);
+
+  const note = document.createElement('span');
+  note.className = 'punch-note';
+  // Hover on an operand note highlights the row at the byte's value.
+  note.addEventListener('mouseenter', () => {
+    const t = note.dataset.target;
+    if (t !== undefined) peekCard(parseInt(t, 10));
+  });
+  note.addEventListener('mouseleave', () => peekCard(null));
+  row.appendChild(note);
+
+  function update(asOperand) {
+    const v = cardBytes[addr] & 0xFF;
+    for (const {el, bit} of holeEls) {
+      el.classList.toggle('on', !!(v & (1 << bit)));
+    }
+    if (asOperand) {
+      note.textContent = '→ 0x' + v.toString(16).toUpperCase().padStart(2, '0');
+      note.dataset.target = v;
+      note.classList.add('operand');
+    } else {
+      note.textContent = disasmByte(v, cardBytes[(addr + 1) & (CARD_BYTES - 1)]);
+      delete note.dataset.target;
+      note.classList.remove('operand');
+    }
+  }
+  return { row, update };
+}
+
+for (let a = 0; a < CARD_BYTES; a++) {
+  const r = makePunchRow(a);
+  punchRoot.appendChild(r.row);
+  punchRows.push(r);
+}
+
+// Hover-highlight for a card row pointed at by an operand value.
+let peekedCardAddr = null;
+function peekCard(addr) {
+  if (peekedCardAddr !== null && punchRows[peekedCardAddr]) {
+    punchRows[peekedCardAddr].row.classList.remove('peek');
+  }
+  peekedCardAddr = (addr !== null && addr >= 0 && addr < CARD_BYTES) ? addr : null;
+  if (peekedCardAddr !== null) {
+    punchRows[peekedCardAddr].row.classList.add('peek');
+  }
+}
+
+function updateCard() {
+  // Walk the byte stream and mark which bytes are operands of a multi-byte
+  // instruction (MSB of top nibble = 1).
+  const isOperand = new Array(CARD_BYTES).fill(false);
+  let i = 0;
+  while (i < CARD_BYTES) {
+    const isDouble = (cardBytes[i] & 0x80) !== 0;
+    if (isDouble && i + 1 < CARD_BYTES) {
+      isOperand[i + 1] = true;
+      i += 2;
+    } else {
+      i += 1;
+    }
+  }
+  for (let a = 0; a < CARD_BYTES; a++) {
+    punchRows[a].update(isOperand[a]);
+  }
+}
+
+document.getElementById('btn-load-card').addEventListener('click', () => {
+  loadBytes(Array.from(cardBytes));
+});
+document.getElementById('btn-clear-card').addEventListener('click', () => {
+  cardBytes.fill(0);
+  updateCard();
+});
+
+// ============================================================
+// CHEAT SHEET (instruction-set reference)
+// ============================================================
+document.getElementById('cheat-sheet').innerHTML = `
+  <div class="cheat-brand">M S U &middot; OP CODE KEY<br>FORM REF-8</div>
+  <h4>SYS &middot; 0000</h4>
+  <table>
+    <tr><td class="bits">0000</td><td>HALT</td></tr>
+    <tr><td class="bits">0001</td><td>WINT</td></tr>
+    <tr><td class="bits">0010</td><td>RINT</td></tr>
+    <tr><td class="bits">10RR</td><td>RAND&nbsp;R</td></tr>
+    <tr><td class="bits">1111</td><td>NOOP</td></tr>
+  </table>
+  <h4>GFX &middot; 0001</h4>
+  <table>
+    <tr><td class="bits">0000</td><td>CLEAR</td></tr>
+    <tr><td class="bits">0001</td><td>PLOT</td></tr>
+  </table>
+  <h4>MOV &middot; 0010-0100</h4>
+  <table>
+    <tr><td class="bits">0010 SD</td><td>D,S</td></tr>
+    <tr><td class="bits">0011 PD</td><td>D,[P]</td></tr>
+    <tr><td class="bits">0100 PS</td><td>[P],S</td></tr>
+  </table>
+  <h4>RMATH &middot; 0101</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>ADD&nbsp;A,R</td></tr>
+    <tr><td class="bits">01R</td><td>SUB&nbsp;A,R</td></tr>
+    <tr><td class="bits">10R</td><td>MUL&nbsp;A,R</td></tr>
+    <tr><td class="bits">11R</td><td>DIV&nbsp;A,R</td></tr>
+  </table>
+  <h4>RUNARY &middot; 0110</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>INC&nbsp;R</td></tr>
+    <tr><td class="bits">01R</td><td>DEC&nbsp;R</td></tr>
+    <tr><td class="bits">10R</td><td>NEG&nbsp;R</td></tr>
+    <tr><td class="bits">11R</td><td>ZERO&nbsp;R</td></tr>
+  </table>
+  <h4>RLOGIC &middot; 0111</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>AND&nbsp;A,R</td></tr>
+    <tr><td class="bits">01R</td><td>OR&nbsp;&nbsp;A,R</td></tr>
+    <tr><td class="bits">10R</td><td>XOR&nbsp;A,R</td></tr>
+    <tr><td class="bits">11R</td><td>SHL&nbsp;A,R</td></tr>
+  </table>
+  <h4>MEM &middot; 1000 + ad</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>R,[ad]</td></tr>
+    <tr><td class="bits">01R</td><td>R,imm</td></tr>
+    <tr><td class="bits">10R</td><td>[ad],R</td></tr>
+  </table>
+  <h4>MMATH &middot; 1001 + ad</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>ADD&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">01R</td><td>SUB&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">10R</td><td>MUL&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">11R</td><td>DIV&nbsp;R,[ad]</td></tr>
+  </table>
+  <h4>JUMP &middot; 1010 + ad</h4>
+  <table>
+    <tr><td class="bits">0000</td><td>JMP</td></tr>
+    <tr><td class="bits">0001</td><td>JZ</td></tr>
+    <tr><td class="bits">0010</td><td>JP</td></tr>
+    <tr><td class="bits">0011</td><td>JN</td></tr>
+    <tr><td class="bits">0100</td><td>JSR</td></tr>
+    <tr><td class="bits">0101</td><td>JI</td></tr>
+  </table>
+  <h4>LOGIC &middot; 1011 + ad</h4>
+  <table>
+    <tr><td class="bits">00R</td><td>AND&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">01R</td><td>OR&nbsp;&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">10R</td><td>XOR&nbsp;R,[ad]</td></tr>
+    <tr><td class="bits">11R</td><td>SHL&nbsp;R,[ad]</td></tr>
+  </table>
+  <h4>REGISTER R</h4>
+  <span class="cheat-regkey">
+    <span class="lab">00</span><span>A</span>
+    <span class="lab">01</span><span>B</span>
+    <span class="lab">10</span><span>C</span>
+    <span class="lab">11</span><span>D</span>
+  </span>
+  <div class="cheat-footer">PRINTED IN BOZEMAN<br>REV 1 &middot; KEEP CARD CLEAN</div>
+`;
+
+// ============================================================
+// BYTETRAN COMPILER
+// ============================================================
+// A Fortran-flavored high level language. Source compiles to BDP-1 assembly.
+//
+// Grammar (uppercase tokens):
+//   program     = { statement }
+//   statement   = assignment | write | do_while | if
+//   assignment  = IDENT '=' expr
+//   write       = 'WRITE' expr
+//   do_while    = 'DO' 'WHILE' expr { statement } 'END'
+//   if          = 'IF' expr { statement } [ 'ELSE' { statement } ] 'END'
+//   expr        = 'READ' | primary [ ('+'|'-'|'>='|'==') primary ]
+//   primary     = IDENT | NUMBER | 'TRUE' | 'FALSE'
+//   comment     = '!' to end of line
+
+const BT_KEYWORDS = new Set(['IF','ELSE','END','DO','WHILE','READ','WRITE','TRUE','FALSE']);
+// Variables compile to memory labels prefixed with V_ so they can never
+// collide with register names (A/B/C/D) or other assembly mnemonics.
+const varLabel = (name) => 'V_' + name;
+
+function btTokenize(src) {
+  src = src.replace(/!.*/g, '');
+  const re = />=|==|[A-Z][A-Z0-9]*|-?\d+|[=+\-]/g;
+  return src.match(re) || [];
+}
+
+function btParse(src) {
+  const tokens = btTokenize(src);
+  let i = 0;
+  const peek = () => tokens[i];
+  const take = () => tokens[i++];
+  const match = (s) => tokens[i] === s;
+  const require = (s) => { if (!match(s)) throw new Error('expected "' + s + '" but got "' + (peek() || '<end>') + '"'); take(); };
+  const isIdent = (t) => /^[A-Z][A-Z0-9]*$/.test(t || '');
+  const isNumber = (t) => /^-?\d+$/.test(t || '');
+
+  const declared = new Set();   // declared variables
+
+  function parseProgram() {
+    const stmts = [];
+    while (i < tokens.length) stmts.push(parseStatement());
+    return {kind: 'program', stmts};
+  }
+  function parseStatement() {
+    if (match('WRITE')) { take(); return {kind: 'write', expr: parseExpression()}; }
+    if (match('DO')) {
+      take();
+      require('WHILE');
+      const cond = parseExpression();
+      const body = [];
+      while (i < tokens.length && !match('END')) body.push(parseStatement());
+      require('END');
+      return {kind: 'while', cond, body};
+    }
+    if (match('IF')) {
+      take();
+      const cond = parseExpression();
+      const tbody = [];
+      while (i < tokens.length && !match('END') && !match('ELSE')) tbody.push(parseStatement());
+      let fbody = [];
+      if (match('ELSE')) {
+        take();
+        while (i < tokens.length && !match('END')) fbody.push(parseStatement());
+      }
+      require('END');
+      return {kind: 'if', cond, tbody, fbody};
+    }
+    if (isIdent(peek()) && !BT_KEYWORDS.has(peek())) {
+      const name = take();
+      require('=');
+      const expr = parseExpression();
+      declared.add(name);
+      return {kind: 'assign', name, expr};
+    }
+    throw new Error('unknown token "' + (peek() || '<end>') + '"');
+  }
+  function parseExpression() {
+    if (match('READ')) { take(); return {kind: 'read'}; }
+    // additive [ comparison additive ]
+    const lhs = parseAdditive();
+    if (match('>=') || match('==')) {
+      const op = take();
+      const rhs = parseAdditive();
+      return {kind: 'cmp', op, lhs, rhs};
+    }
+    return lhs;
+  }
+  function parseAdditive() {
+    const lhs = parsePrimary();
+    if (match('+') || match('-')) {
+      const op = take();
+      const rhs = parsePrimary();
+      return {kind: 'binop', op, lhs, rhs};
+    }
+    return lhs;
+  }
+  function parsePrimary() {
+    const t = peek();
+    if (isIdent(t)) {
+      take();
+      if (t === 'TRUE') return {kind: 'num', value: 1};
+      if (t === 'FALSE') return {kind: 'num', value: 0};
+      if (BT_KEYWORDS.has(t)) throw new Error('unexpected keyword "' + t + '" in expression');
+      if (!declared.has(t)) throw new Error('variable "' + t + '" used before assignment');
+      return {kind: 'var', name: t};
+    }
+    if (isNumber(t)) { take(); return {kind: 'num', value: parseInt(t, 10) & 0xFF}; }
+    throw new Error('expected variable or number but got "' + (t || '<end>') + '"');
+  }
+  return parseProgram();
+}
+
+function btCompile(src) {
+  const ast = btParse(src);
+  const lines = [];
+  const vars = new Set();   // user variable names (without V_ prefix)
+  const tmps = new Set();   // compiler-generated temp labels (already include prefix)
+  const nums = new Set();
+  let labelCounter = 0;
+  let tmpCounter = 0;
+  const newLabel = (hint) => '_L' + (labelCounter++) + (hint ? '_' + hint : '');
+  const nextTmp = () => { const t = '_T' + (tmpCounter++); tmps.add(t); return t; };
+
+  const numLabel = (n) => {
+    n = n & 0xFF;
+    nums.add(n);
+    return 'N_' + n;
+  };
+  const operandLabel = (e) => {
+    if (e.kind === 'var') { vars.add(e.name); return varLabel(e.name); }
+    if (e.kind === 'num') return numLabel(e.value);
+    throw new Error('operand must be a variable or number');
+  };
+
+  function emit(s) { lines.push(s); }
+  function emitExpr(e) {
+    if (e.kind === 'read') { emit('        RINT'); return; }
+    if (e.kind === 'var') { vars.add(e.name); emit('        MOV A, [' + varLabel(e.name) + ']'); return; }
+    if (e.kind === 'num') { emit('        MOV A, [' + numLabel(e.value) + ']'); return; }
+    if (e.kind === 'binop') {
+      // load lhs into A, then ADD/SUB rhs (operand resolved as label)
+      emitExpr(e.lhs);
+      const lab = operandLabel(e.rhs);
+      emit('        ' + (e.op === '+' ? 'ADD' : 'SUB') + ' A, [' + lab + ']');
+      return;
+    }
+    if (e.kind === 'cmp') {
+      // Compute lhs - rhs in A, then collapse to 1 (true) or 0 (false).
+      // BDP-1: JP is strictly positive; ==0 needs JZ. So '>=' jumps on either JP or JZ.
+      if (e.rhs.kind === 'var' || e.rhs.kind === 'num') {
+        // Simple rhs — fold into a SUB A, [label]
+        emitExpr(e.lhs);
+        emit('        SUB A, [' + operandLabel(e.rhs) + ']');
+      } else {
+        // rhs is itself an additive expression — stash it in a temp cell first.
+        emitExpr(e.rhs);
+        const tmp = nextTmp();
+        emit('        MOV [' + tmp + '], A');
+        emitExpr(e.lhs);
+        emit('        SUB A, [' + tmp + ']');
+      }
+      const tLab = newLabel('true');
+      const eLab = newLabel('end');
+      if (e.op === '>=') {
+        emit('        JP ' + tLab);
+        emit('        JZ ' + tLab);
+      } else /* == */ {
+        emit('        JZ ' + tLab);
+      }
+      emit('        MOV A, [' + numLabel(0) + ']');
+      emit('        JMP ' + eLab);
+      emit(tLab + ':');
+      emit('        MOV A, [' + numLabel(1) + ']');
+      emit(eLab + ':');
+      return;
+    }
+    throw new Error('cannot compile expression: ' + JSON.stringify(e));
+  }
+
+  function emitStmt(s) {
+    if (s.kind === 'assign') {
+      emitExpr(s.expr);
+      vars.add(s.name);
+      emit('        MOV [' + varLabel(s.name) + '], A');
+      return;
+    }
+    if (s.kind === 'write') {
+      emitExpr(s.expr);
+      emit('        WINT');
+      return;
+    }
+    if (s.kind === 'while') {
+      const top = newLabel('loop');
+      const end = newLabel('endloop');
+      emit(top + ':');
+      emitExpr(s.cond);
+      // After cmp emit, A is 0 or 1. For "true == 1" we continue; for 0 we exit.
+      // After additive/var/num expressions, A is the value. Treat zero as false.
+      emit('        JZ ' + end);
+      for (const c of s.body) emitStmt(c);
+      emit('        JMP ' + top);
+      emit(end + ':');
+      return;
+    }
+    if (s.kind === 'if') {
+      const elseLab = newLabel('else');
+      const endLab = newLabel('endif');
+      emitExpr(s.cond);
+      emit('        JZ ' + elseLab);
+      for (const c of s.tbody) emitStmt(c);
+      emit('        JMP ' + endLab);
+      emit(elseLab + ':');
+      for (const c of s.fbody) emitStmt(c);
+      emit(endLab + ':');
+      return;
+    }
+    throw new Error('cannot compile statement: ' + JSON.stringify(s));
+  }
+
+  emit('; compiled from ByteTran');
+  for (const c of ast.stmts) emitStmt(c);
+  emit('        HALT');
+  emit('; --- data ---');
+  // Ensure key constants exist
+  for (const n of [0, 1]) nums.add(n);
+  for (const n of Array.from(nums).sort((a,b)=>a-b)) {
+    emit('N_' + n + ': SW ' + n);
+  }
+  for (const v of vars) emit(varLabel(v) + ': SW 0');
+  for (const t of tmps) emit(t + ': SW 0');
+
+  return lines.join('\n');
+}
+
+// ============================================================
+// HLL EXAMPLES + LIVE COMPILE
+// ============================================================
+const HLL_EXAMPLES = {
+  'bt-count':
+`! Count 0..N-1 and print each. N read from stdin.
+N = READ
+I = 0
+DO WHILE N - I >= 1
+  WRITE I
+  I = I + 1
+END`,
+
+  'bt-fib':
+`! Fibonacci. Read N, print fib(N).
+N = READ
+A = 0
+B = 1
+DO WHILE N >= 1
+  T = A + B
+  A = B
+  B = T
+  N = N - 1
+END
+WRITE A`,
+
+  'bt-echo':
+`! Echo a single int back, doubled, then halt.
+X = READ
+Y = X + X
+WRITE Y`,
+};
+
+document.getElementById('hll-examples').addEventListener('change', e => {
+  const v = e.target.value;
+  if (!v) return;
+  document.getElementById('hll-src').value = HLL_EXAMPLES[v];
+  e.target.value = '';
+  hllRecompile();
+});
+
+const hllSrcEl = document.getElementById('hll-src');
+const hllOutEl = document.getElementById('hll-asm');
+let lastHllAsm = '';
+
+function hllRecompile() {
+  const src = hllSrcEl.value;
+  try {
+    const asm = btCompile(src);
+    lastHllAsm = asm;
+    hllOutEl.textContent = asm;
+    hllOutEl.classList.remove('err');
+  } catch (e) {
+    lastHllAsm = '';
+    hllOutEl.textContent = '; compile error: ' + e.message;
+    hllOutEl.classList.add('err');
+  }
+}
+hllSrcEl.addEventListener('input', hllRecompile);
+
+document.getElementById('btn-compile').addEventListener('click', () => {
+  hllRecompile();
+  if (!lastHllAsm) return;
+  try {
+    const bytes = assemble(lastHllAsm);
+    loadBytes(bytes);
+  } catch (e) {
+    hllOutEl.textContent = '; assembly error: ' + e.message + '\n' + lastHllAsm;
+    hllOutEl.classList.add('err');
+  }
+});
+
+// HLL quick reference panel
+document.getElementById('hll-help').innerHTML = `
+  <h4>ByteTran</h4>
+  <p>Uppercase, integer-only, whitespace-sensitive.</p>
+  <h4>Statements</h4>
+  <pre>X = expr
+WRITE expr
+DO WHILE cond
+  ...
+END
+IF cond
+  ...
+ELSE
+  ...
+END</pre>
+  <h4>Expressions</h4>
+  <p><code>READ</code>, <code>a + b</code>, <code>a - b</code> (no nesting),<br>
+     <code>a &gt;= b</code>, <code>a == b</code>, identifiers, numbers, <code>TRUE</code>, <code>FALSE</code>.</p>
+  <h4>Comments</h4>
+  <p><code>! to end of line</code></p>
+  <h4>Notes</h4>
+  <p>Each variable becomes a memory cell. Loop condition <code>== 0</code> is false; non-zero is true.</p>
+`;
+
+// ============================================================
+// INIT
+// ============================================================
+document.getElementById('program').value = EXAMPLES['rand-pixels'];
+document.getElementById('hll-src').value = HLL_EXAMPLES['bt-count'];
+hllRecompile();
+updateCard();
+showSplash();
+refresh();
+</script>
+</body>
+</html>
