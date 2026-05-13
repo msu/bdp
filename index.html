@@ -350,7 +350,7 @@
   /* ---------- Punch card view ---------- */
   .card-body {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr;
     gap: 10px;
     padding: 8px;
     overflow: auto;
@@ -532,8 +532,8 @@
     padding: 8px 10px;
     font-family: 'Cascadia Mono', 'Menlo', 'Courier New', monospace;
     font-size: 10px;
-    width: 11.5em;
     min-width: 11.5em;
+    align-self: start;
     box-shadow: 0 1px 3px rgba(0,0,0,0.22), inset 0 0 0 1px #e2c977;
   }
   .cheat-brand, .cheat-footer {
@@ -556,7 +556,7 @@
     font-weight: 700;
   }
   .cheat-sheet h4:first-of-type { margin-top: 0; }
-  .cheat-sheet table { border-collapse: collapse; width: 100%; }
+  .cheat-sheet table { border-collapse: collapse; width: auto; }
   .cheat-sheet td { padding: 0 4px 0 0; vertical-align: top; white-space: nowrap; }
   .cheat-sheet td.bits { color: #8a6610; font-size: 9px; }
   /* the vertical R-encoding key at the bottom */
