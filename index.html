@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BDP-1 Emulator</title>
 <style>
   :root {
@@ -118,6 +119,15 @@
     color: rgba(255, 255, 255, 0.75);
     letter-spacing: 0.02em;
   }
+  .panel-title-link {
+    font-weight: 400;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #1f3a6b;
+    text-decoration: none;
+    padding: 0 4px;
+  }
+  .panel-title-link:hover { text-decoration: underline; }
 
   /* ---------- Toolbar ---------- */
   .toolbar {
@@ -628,6 +638,45 @@
   }
 
   ::selection { background: #ffd84d; color: #000; }
+
+  /* ---------- Mobile / narrow screens ---------- */
+  @media (max-width: 900px) {
+    body {
+      height: auto;
+      overflow: auto;
+      padding: 8px;
+    }
+    .layout {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+    .col { min-width: 0; }
+    .fill { flex: 0 0 auto; }
+    .header-title { font-size: 20px; padding: 6px 12px; }
+    .header-sub { font-size: 13px; }
+    .toolbar { gap: 4px; }
+    .toolbar button { min-width: 0; padding: 3px 8px; }
+    .screen-wrap { padding: 6px; }
+    canvas#screen { width: 100% !important; height: auto !important; max-width: 320px; aspect-ratio: 1 / 1; }
+    #memory { max-height: 60vh; overflow: auto; }
+    .card-body, .hll-body {
+      grid-template-columns: 1fr;
+    }
+    .cheat, .hll-help {
+      min-width: 0;
+      max-width: none;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .punch-card { margin: 0 auto; }
+    textarea#program, #hll-src { min-height: 240px; }
+    .hll-out { min-height: 160px; }
+    .reg-row, .mem-row {
+      grid-template-columns: 2.8em auto 3em 2.5em 1fr;
+      gap: 6px;
+    }
+    .panel-title { flex-wrap: wrap; gap: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -686,6 +735,7 @@
           <button class="tab" data-tab="asm">ASM</button>
           <button class="tab" data-tab="hll">ByteTran</button>
         </span>
+        <a class="panel-title-link" href="https://github.com/msu/bdp/blob/master/README.md" target="_blank" rel="noopener">README</a>
       </div>
 
       <!-- ASM mode -->

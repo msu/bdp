@@ -70,11 +70,11 @@ It is designed to complement the [MTMC-16](https://mtmc.cs.montana.edu) as a sim
 
 ## Subroutine convention
 
-The BDP uses a [PDP](https://en.wikipedia.org/wiki/PDP-8) style for invoking sub-routines: 
+The BDP uses a [PDP](https://en.wikipedia.org/wiki/PDP-8) style for invoking sub-routines:
 
 * `JSR slot` writes the return address into `M[slot]` and jumps to `slot+1`
 * The function body lives at `slot+1`
-* Return with `JI slot` (indirect jump through the saved address) 
+* Return with `JI slot` (indirect jump through the saved address)
 * NO STACK: not re-entrant!
 
 ```
@@ -89,17 +89,79 @@ double: SW 0             ; return slot; body starts at the next byte
 scratch: SW 0
 ```
 
-## Assembler directives
+## Programming
 
-* `label:` defines a label at the current address (no `.org` - the assembler emits code sequentially starting at 0x00)
-* `SW value [, value ...]` emits one raw byte per value
+The BDP-1 can be programmed three ways, from lowest-level to highest:
+
+* Punch cards: click holes to toggle individual bits of each byte
+* Assembly: mnemonics and labels, run through the built-in assembler
+* ByteTran: a small Fortran-flavored HLL that compiles to BDP-1 assembly
+
+Each is documented below.
+
+## Punch Cards
+
+The CARD tab presents a vertical, 32-byte punch card. 
+
+Each row has eight clickable holes (bit 7 on the left, bit 0 on the right) 
+
+Clicking a hole flips the corresponding bit.
+
+You can load the program into memory using the "Load Card" button below the card.
+
+## Assembly
+
+The ASM tab is a plain text editor that runs through a two-pass assembler. 
+
+Click `ASSEMBLE & LOAD` to assemble the source & load it into memory starting at `0x00`. A
+
+n EXAMPLES dropdown ships several short programs (random pixels, count loop, color sweep, JSR demo, indirect array sum, XOR moire).
+
+### ASM Guide
+
+Write one instruction per line. Operands are separated by spaces or commas. Mnemonics and register names are case-insensitive.
+
+```
+        MOV A, 5         ; load immediate
+        MOV B, [count]   ; load from memory
+        ADD A, B         ; accumulator add (dst must be A)
+        MOV [count], A   ; store back
+        HALT
+count:  SW 0
+```
+
+### Operands
+
+The same mnemonic (`MOV`, `ADD`, `SUB`, ...) accepts multiple operand shapes: the assembler picks the right encoding from the syntax
+
+| Operand                                   | Meaning                                                |
+|-------------------------------------------|--------------------------------------------------------|
+| `A`/`B`/`C`/`D`                           | a register                                             |
+| `[A]` etc.                                | memory at the address held in that register (indirect) |
+| `[label]` / `[42]` / `[0x2A]`             | memory at the given address (absolute)                 |
+| `label` / `42` / `0x2A` / `0b101` / `'X'` | immediate value (or address, for jumps)                |
+
+Brackets mean "memory access." 
+
+Bare names and numbers are immediate (for data ops) or jump targets (for `JMP`/`JZ`/`JP`/`JN`/`JSR`/`JI`). 
+
+Numeric literals can be decimal, `0x`-prefixed hex or `0b`-prefixed binary.
+
+### Assembler directives
+
+* `label:` defines a label at the current address (no `.org` -- the assembler emits sequentially starting at `0x00`, with data after code)
+* `SW value [, value ...]` emits one raw byte per value (decimal, hex, binary, char, or a label)
 * `;` starts a comment to end of line
 
-# ByteTran
+Labels are resolved during pass 2, so forward references (e.g. `JMP done` before the `done:` line) work.
+
+## ByteTran
 
 ByteTran is a Fortran-flavored high level language that compiles to BDP-1 assembly. It is uppercase, integer-only & whitespace-sensitive.
 
-## Grammar
+The ByteTran tab has a source editor on top and a read-only view of the generated assembly underneath that updates on every keystroke -- a deliberate teaching aid for watching HLL constructs translate into instructions. Click **`COMPILE & LOAD`** to assemble that output and run it.
+
+### Grammar
 
 ```
 program     = { statement }
@@ -113,7 +175,7 @@ primary     = IDENT | NUMBER | 'TRUE' | 'FALSE'
 comment     = '!' to end of line
 ```
 
-## Example
+### Example
 
 ```
 ! Fibonacci - read N, print fib(N)
@@ -128,3 +190,8 @@ DO WHILE N >= 1
 END
 WRITE A
 ```
+
+### Limitations
+
+* Expressions do not nest: `a + b + c` is illegal. At most one additive operator per expression, optionally wrapped by one comparison (so `a - b >= c` is allowed).
+* All arithmetic is 8-bit and wraps modulo 256.
